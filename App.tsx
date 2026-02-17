@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { 
   MapPin, 
@@ -12,8 +12,8 @@ import {
   ExternalLink,
   Calendar,
   ChevronRight,
-  Info,
-  History
+  Clock,
+  Navigation
 } from 'lucide-react';
 import { City, HolyDay, ItineraryResponse } from './types';
 
@@ -52,7 +52,7 @@ const App: React.FC = () => {
     if (!vibe.trim()) {
       setError({ 
         title: "Falta tu preferencia", 
-        msg: "Por favor, cuéntanos qué buscas: ¿silencio?, ¿música?, ¿barrios?, ¿evitar bullas?" 
+        msg: "Dinos qué tipo de ambiente buscas (ej: silencio, bandas de música, barrios lejanos...)." 
       });
       return;
     }
@@ -62,25 +62,25 @@ const App: React.FC = () => {
     const interval = setInterval(() => {
       setLoadingStep(LOADING_MESSAGES[msgIndex % LOADING_MESSAGES.length]);
       msgIndex++;
-    }, 2500);
+    }, 2800);
     
     setError(null);
     setResult(null);
     setSources([]);
 
     try {
-      // Inicialización directa según directrices
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+      // Inicialización estrictamente según directrices
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
-      const prompt = `Actúa como un experto historiador y cronista de la Semana Santa de Andalucía.
-      Genera un itinerario optimizado para la ciudad de ${city} el día ${day}.
-      Preferencia del usuario: "${vibe}".
+      const prompt = `Eres un experto cronista de la Semana Santa de Andalucía con acceso a información en tiempo real de 2025.
+      Genera un itinerario único para la ciudad de ${city} el día ${day}.
+      El usuario tiene estas preferencias: "${vibe}".
       
-      INSTRUCCIONES:
-      1. Usa la herramienta de Google Search para encontrar itinerarios REALES y actualizados para el año 2025.
-      2. Crea un plan de al menos 4 momentos clave (Mañana/Salida, Tarde, Noche, Recogida).
-      3. Explica por qué cada momento encaja con la preferencia del usuario ("${vibe}").
-      4. Responde estrictamente en formato JSON válido según el esquema proporcionado.`;
+      OBJETIVO:
+      1. Usa Google Search para encontrar los horarios y recorridos REALES de 2025.
+      2. Crea un plan coherente con 4 momentos clave distribuidos a lo largo del día.
+      3. Explica con detalle por qué cada recomendación encaja con su preferencia de "${vibe}".
+      4. Responde EXCLUSIVAMENTE en formato JSON.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -109,7 +109,7 @@ const App: React.FC = () => {
               },
               extra_tips: { type: Type.STRING }
             },
-            required: ["city", "day", "plan_title", "itinerary"]
+            required: ["city", "day", "plan_title", "itinerary", "extra_tips"]
           }
         }
       });
@@ -121,15 +121,13 @@ const App: React.FC = () => {
         setResult(data);
         const grounding = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
         setSources(grounding.filter((c: any) => c.web).map((c: any) => c.web));
-      } else {
-        throw new Error("La respuesta de la IA está vacía.");
       }
     } catch (err: any) {
       clearInterval(interval);
-      console.error("Error completo:", err);
+      console.error(err);
       setError({
         title: "Error de Conexión",
-        msg: "No se ha podido obtener el itinerario. Esto suele pasar si la API_KEY no es válida o si hay un bloqueo de red.",
+        msg: "No hemos podido conectar con el servicio. Esto puede deberse a la configuración de la API_KEY o problemas de red.",
         detail: err.message
       });
     } finally {
@@ -147,172 +145,217 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#fdfaf6] pb-24 overflow-x-hidden">
-      {/* Header Ornamental */}
-      <header className="bg-[#4a0404] text-[#d4af37] pt-16 pb-52 px-6 rounded-b-[4rem] shadow-2xl relative border-b-4 border-[#d4af37]/30">
-        <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/pinstriped-suit.png')]"></div>
+    <div className="min-h-screen bg-[#fdfaf6] pb-12 overflow-x-hidden">
+      {/* Header Ornamental Premium */}
+      <header className="bg-[#4a0404] text-[#d4af37] pt-14 pb-48 px-6 rounded-b-[3.5rem] shadow-2xl relative border-b-[6px] border-[#d4af37]/40 overflow-hidden">
+        <div className="absolute inset-0 opacity-10 pointer-events-none bg-[url('https://www.transparenttextures.com/patterns/pinstriped-suit.png')]"></div>
+        <div className="absolute -top-10 -right-10 w-40 h-40 bg-[#d4af37]/10 rounded-full blur-3xl"></div>
+        <div className="absolute top-20 -left-20 w-60 h-60 bg-[#d4af37]/5 rounded-full blur-3xl"></div>
+        
         <div className="max-w-xl mx-auto text-center relative z-10">
-          <h1 className="text-5xl font-serif-cofrade font-bold mb-4 tracking-tighter drop-shadow-2xl sm:text-6xl">Guía Cofrade Pro</h1>
-          <div className="flex items-center justify-center gap-4 opacity-70">
-            <div className="h-px w-8 bg-[#d4af37]"></div>
-            <p className="text-[#f3e5ab] text-[9px] uppercase font-black tracking-[0.4em]">Andalucía · 2025</p>
-            <div className="h-px w-8 bg-[#d4af37]"></div>
+          <h1 className="text-5xl font-serif-cofrade font-extrabold mb-3 tracking-tight sm:text-6xl drop-shadow-md">Guía Cofrade Pro</h1>
+          <div className="flex items-center justify-center gap-3">
+            <div className="h-px w-6 bg-[#d4af37]/60"></div>
+            <p className="text-[#f3e5ab] text-[10px] uppercase font-black tracking-[0.5em] opacity-80">Andalucía · 2025</p>
+            <div className="h-px w-6 bg-[#d4af37]/60"></div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-xl mx-auto -mt-44 px-4 space-y-6 relative z-20">
-        {/* Formulario Principal */}
-        <section className="bg-white rounded-[3rem] p-8 shadow-xl border border-white/50">
-          <div className="grid grid-cols-2 gap-4 mb-6">
-            <div className="space-y-1.5">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-1">
-                <MapPin className="w-3 h-3 text-[#d4af37]" /> Ciudad
+      <main className="max-w-xl mx-auto -mt-40 px-5 space-y-8 relative z-20">
+        {/* Panel de Configuración */}
+        <section className="bg-white rounded-[2.5rem] p-8 shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-white/50 backdrop-blur-sm">
+          <div className="grid grid-cols-2 gap-4 mb-8">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 pl-1">
+                <MapPin className="w-3.5 h-3.5 text-[#d4af37]" /> Ciudad
               </label>
-              <div className="relative">
+              <div className="relative group">
                 <select 
                   value={city} 
                   onChange={e => setCity(e.target.value as City)} 
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 font-bold text-slate-800 outline-none appearance-none focus:ring-2 focus:ring-[#d4af37]/20 transition-all text-sm"
+                  className="w-full bg-[#fdfaf6] border border-slate-100 rounded-2xl py-4 px-5 font-bold text-slate-800 outline-none appearance-none focus:ring-2 focus:ring-[#d4af37]/30 transition-all text-sm shadow-sm"
                 >
                   {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
-                <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 rotate-90 pointer-events-none" />
+                <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#d4af37] rotate-90 pointer-events-none opacity-50" />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-1">
-                <Calendar className="w-3 h-3 text-[#d4af37]" /> Día
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 pl-1">
+                <Calendar className="w-3.5 h-3.5 text-[#d4af37]" /> Jornada
               </label>
-              <div className="relative">
+              <div className="relative group">
                 <select 
                   value={day} 
                   onChange={e => setDay(e.target.value as HolyDay)} 
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 font-bold text-slate-800 outline-none appearance-none focus:ring-2 focus:ring-[#d4af37]/20 transition-all text-sm"
+                  className="w-full bg-[#fdfaf6] border border-slate-100 rounded-2xl py-4 px-5 font-bold text-slate-800 outline-none appearance-none focus:ring-2 focus:ring-[#d4af37]/30 transition-all text-sm shadow-sm"
                 >
                   {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
-                <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-300 rotate-90 pointer-events-none" />
+                <ChevronRight className="absolute right-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#d4af37] rotate-90 pointer-events-none opacity-50" />
               </div>
             </div>
           </div>
 
-          <div className="space-y-1.5 mb-8">
-            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-1">
-              <Sparkles className="w-3 h-3 text-[#d4af37]" /> Tus preferencias
+          <div className="space-y-2 mb-8">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 pl-1">
+              <Sparkles className="w-3.5 h-3.5 text-[#d4af37]" /> ¿Qué buscas hoy?
             </label>
             <textarea 
               value={vibe} 
               onChange={e => setVibe(e.target.value)} 
-              placeholder="Ej: Silencio, mucha música, calles estrechas, barrios..." 
-              className="w-full bg-slate-50 border border-slate-100 rounded-[2rem] py-5 px-6 min-h-[110px] text-slate-700 resize-none outline-none focus:ring-2 focus:ring-[#d4af37]/20 transition-all text-sm shadow-inner" 
+              placeholder="Ej: Silencio, mucha música, calles estrechas, barrios populares, evitar bullas..." 
+              className="w-full bg-[#fdfaf6] border border-slate-100 rounded-[1.8rem] py-5 px-6 min-h-[120px] text-slate-700 resize-none outline-none focus:ring-2 focus:ring-[#d4af37]/30 transition-all text-[15px] shadow-inner font-medium placeholder-slate-300" 
             />
           </div>
 
           <button 
             onClick={generateItinerary} 
             disabled={loading} 
-            className="w-full bg-[#4a0404] disabled:bg-slate-300 text-[#d4af37] font-black py-6 rounded-[2rem] shadow-lg active:scale-[0.98] transition-all flex items-center justify-center gap-3 active:bg-[#600606]"
+            className="w-full bg-[#4a0404] disabled:bg-slate-200 text-[#d4af37] font-black py-6 rounded-[1.8rem] shadow-[0_10px_20px_-5px_rgba(74,4,4,0.4)] active:scale-[0.97] transition-all flex items-center justify-center gap-4 relative overflow-hidden group"
           >
-            {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : <Compass className="w-6 h-6" />}
-            <span className="text-lg tracking-tight uppercase">Generar Ruta Personalizada</span>
+            <div className="absolute inset-0 bg-white/5 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
+            {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : <Navigation className="w-5 h-5" />}
+            <span className="text-lg tracking-tight uppercase font-serif-cofrade font-bold">Planificar Itinerario</span>
           </button>
         </section>
 
-        {/* Cargando */}
+        {/* Estado de Carga */}
         {loading && (
-          <div className="bg-white/90 backdrop-blur rounded-[3rem] p-12 flex flex-col items-center justify-center space-y-6 shadow-xl border border-white fade-in">
+          <div className="bg-white/80 backdrop-blur-md rounded-[2.5rem] p-12 flex flex-col items-center justify-center space-y-6 shadow-xl border border-white fade-in text-center">
             <div className="relative">
-              <div className="w-16 h-16 border-4 border-[#d4af37]/10 border-t-[#4a0404] rounded-full animate-spin"></div>
-              <Music2 className="absolute inset-0 m-auto w-5 h-5 text-[#d4af37] animate-pulse" />
+              <div className="w-20 h-20 border-4 border-[#d4af37]/20 border-t-[#d4af37] rounded-full animate-spin"></div>
+              <Music2 className="absolute inset-0 m-auto w-6 h-6 text-[#d4af37] animate-pulse" />
             </div>
-            <p className="text-xl font-serif-cofrade font-bold text-[#4a0404] italic text-center px-4">{loadingStep}</p>
+            <div className="space-y-2">
+              <p className="text-2xl font-serif-cofrade font-bold text-[#4a0404] italic">{loadingStep}</p>
+              <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">Sincronizando con programas oficiales</p>
+            </div>
           </div>
         )}
 
-        {/* Errores */}
+        {/* Gestión de Errores */}
         {error && (
-          <div className="bg-white rounded-[3rem] p-8 shadow-xl border border-red-50 fade-in relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1.5 bg-red-600"></div>
-            <div className="text-center space-y-3">
-              <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center mx-auto">
+          <div className="bg-white rounded-[2.5rem] p-8 shadow-xl border-l-[6px] border-red-500 fade-in">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 bg-red-50 rounded-full flex items-center justify-center shrink-0">
                 <AlertCircle className="w-6 h-6 text-red-600" />
               </div>
-              <h3 className="font-serif-cofrade text-xl font-bold text-slate-900">{error.title}</h3>
-              <p className="text-slate-500 text-xs leading-relaxed">{error.msg}</p>
-              {error.detail && (
-                <div className="mt-4 p-3 bg-slate-50 rounded-xl text-[10px] font-mono text-slate-400 break-all border border-slate-100">
-                  Debug: {error.detail}
-                </div>
-              )}
-              <button onClick={() => setError(null)} className="text-[10px] font-black uppercase text-[#d4af37] border-b border-[#d4af37]/30 pb-0.5 mt-2">Entendido</button>
+              <div className="space-y-2">
+                <h3 className="font-serif-cofrade text-xl font-bold text-slate-900">{error.title}</h3>
+                <p className="text-slate-500 text-sm leading-relaxed">{error.msg}</p>
+                {error.detail && (
+                  <div className="mt-4 p-4 bg-slate-50 rounded-xl text-[10px] font-mono text-slate-400 break-all border border-slate-100">
+                    Debug: {error.detail}
+                  </div>
+                )}
+                <button 
+                  onClick={() => setError(null)} 
+                  className="text-[10px] font-black uppercase text-[#d4af37] border-b-2 border-[#d4af37]/20 pb-0.5 mt-2 transition-all hover:border-[#d4af37]"
+                >
+                  Entendido
+                </button>
+              </div>
             </div>
           </div>
         )}
 
-        {/* Resultado del Itinerario */}
+        {/* Resultados del Itinerario */}
         {result && (
           <div className="space-y-8 fade-in pb-12">
-            <div className="bg-white rounded-[3.5rem] p-10 shadow-2xl border border-slate-50 relative overflow-hidden">
-              <div className="absolute top-0 left-0 w-full h-2.5 bg-gradient-to-r from-[#d4af37] via-[#f3e5ab] to-[#d4af37]"></div>
+            <div className="bg-white rounded-[3.5rem] p-10 shadow-2xl border border-white relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-3 bg-gradient-to-r from-[#4a0404] via-[#d4af37] to-[#4a0404]"></div>
               
-              <div className="mb-12 text-center">
-                <h2 className="text-3xl font-serif-cofrade font-bold text-[#4a0404] mb-3 leading-tight uppercase tracking-tight">{result.plan_title}</h2>
-                <div className="inline-flex items-center gap-3 px-6 py-1.5 bg-[#fdfaf6] rounded-full border border-[#d4af37]/20">
-                  <span className="text-[10px] font-black text-[#d4af37] uppercase tracking-[0.2em]">{city} · {day}</span>
+              <div className="mb-14 text-center">
+                <h2 className="text-4xl font-serif-cofrade font-extrabold text-[#4a0404] mb-4 leading-tight uppercase tracking-tight">{result.plan_title}</h2>
+                <div className="flex items-center justify-center gap-3">
+                   <div className="px-4 py-1.5 bg-[#fcf9f4] rounded-full border border-[#d4af37]/20 flex items-center gap-2">
+                      <MapPin className="w-3 h-3 text-[#d4af37]" />
+                      <span className="text-[10px] font-black text-[#4a0404] uppercase tracking-wider">{result.city}</span>
+                   </div>
+                   <div className="px-4 py-1.5 bg-[#fcf9f4] rounded-full border border-[#d4af37]/20 flex items-center gap-2">
+                      <Calendar className="w-3 h-3 text-[#d4af37]" />
+                      <span className="text-[10px] font-black text-[#4a0404] uppercase tracking-wider">{result.day}</span>
+                   </div>
                 </div>
               </div>
 
-              <div className="space-y-12 relative">
-                <div className="absolute left-[20px] top-6 bottom-6 w-px bg-gradient-to-b from-transparent via-[#d4af37]/30 to-transparent"></div>
+              {/* Timeline Itinerary */}
+              <div className="space-y-12 relative before:absolute before:left-[19px] before:top-4 before:bottom-4 before:w-px before:bg-gradient-to-b before:from-transparent before:via-[#d4af37]/40 before:to-transparent">
                 {result.itinerary.map((item, i) => (
-                  <div key={i} className="relative pl-14 group">
-                    <div className="absolute left-0 top-1 w-10 h-10 rounded-full bg-white border border-[#d4af37] flex items-center justify-center z-10 shadow-md group-hover:scale-105 transition-transform">
+                  <div key={i} className="relative pl-14 group transition-all">
+                    <div className="absolute left-0 top-1 w-10 h-10 rounded-full bg-white border-2 border-[#d4af37] flex items-center justify-center z-10 shadow-[0_4px_10px_rgba(212,175,55,0.25)] group-hover:scale-110 transition-transform">
                       <span className="text-[#4a0404] font-black text-xs">{i + 1}</span>
                     </div>
-                    <div className="space-y-3">
-                      <span className="text-white font-black text-[9px] bg-[#4a0404] px-4 py-1.5 rounded-full border border-[#d4af37]/30 uppercase tracking-tighter inline-block shadow-sm">
-                        {item.hour}
-                      </span>
-                      <h3 className="text-2xl font-serif-cofrade font-bold text-slate-900 uppercase leading-none">{item.brotherhood}</h3>
-                      <div className="flex items-start gap-2 text-[#d4af37] text-[11px] font-black uppercase tracking-wider leading-relaxed">
-                        <MapPin className="w-4 h-4 flex-shrink-0" /> 
-                        <span className="border-b border-[#d4af37]/10 pb-0.5">{item.location}</span>
+                    
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3">
+                        <span className="text-white font-black text-[10px] bg-[#4a0404] px-4 py-1.5 rounded-full border border-[#d4af37]/30 uppercase tracking-tighter inline-flex items-center gap-2 shadow-sm">
+                          <Clock className="w-3 h-3" /> {item.hour}
+                        </span>
                       </div>
-                      <div className="mt-4 bg-[#fcf9f4] p-6 rounded-[2rem] border-l-4 border-[#d4af37] shadow-inner">
-                        <p className="italic text-slate-600 text-[15px] leading-relaxed font-serif-cofrade">"{item.vibe_reason}"</p>
+                      
+                      <div className="space-y-1">
+                        <h3 className="text-2xl font-serif-cofrade font-bold text-slate-900 uppercase leading-none">{item.brotherhood}</h3>
+                        <div className="flex items-start gap-2 text-[#d4af37] text-[12px] font-bold uppercase tracking-wide">
+                          <Navigation className="w-3.5 h-3.5 mt-0.5" /> 
+                          <span className="border-b border-[#d4af37]/20 pb-0.5">{item.location}</span>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 bg-[#fcf9f4] p-6 rounded-[2rem] border-l-[5px] border-[#d4af37] shadow-inner relative">
+                        <p className="italic text-slate-700 text-[16px] leading-relaxed font-serif-cofrade">"{item.vibe_reason}"</p>
+                        <div className="absolute top-2 right-4 text-[#d4af37] opacity-10 font-serif text-5xl">“</div>
                       </div>
                     </div>
                   </div>
                 ))}
               </div>
 
+              {/* Extra Tips Box */}
               {result.extra_tips && (
-                <div className="mt-12 p-8 bg-[#4a0404]/5 rounded-[2.5rem] border border-[#d4af37]/10 text-center">
+                <div className="mt-14 p-8 bg-[#4a0404]/5 rounded-[2.5rem] border border-[#d4af37]/10 text-center relative overflow-hidden">
+                   <div className="absolute top-0 right-0 p-2"><Sparkles className="w-4 h-4 text-[#d4af37]/30" /></div>
                    <p className="text-[15px] text-slate-700 italic leading-relaxed font-serif-cofrade">{result.extra_tips}</p>
                 </div>
               )}
 
+              {/* Fuentes del Grounding */}
               {sources.length > 0 && (
-                <div className="mt-10 pt-8 border-t border-slate-50 flex flex-wrap justify-center gap-2">
-                  {sources.map((s, idx) => (
-                    <a key={idx} href={s.uri} target="_blank" rel="noopener noreferrer" className="text-[9px] bg-slate-50 text-slate-400 px-4 py-1.5 rounded-full hover:bg-[#d4af37]/10 hover:text-[#4a0404] transition-all flex items-center gap-2 border border-slate-100">
-                      Info oficial <ExternalLink className="w-2.5 h-2.5" />
-                    </a>
-                  ))}
+                <div className="mt-12 pt-8 border-t border-slate-50">
+                  <p className="text-[9px] font-black text-center text-slate-400 uppercase tracking-widest mb-4">Información verificada 2025</p>
+                  <div className="flex flex-wrap justify-center gap-2">
+                    {sources.map((s, idx) => (
+                      <a 
+                        key={idx} 
+                        href={s.uri} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-[9px] bg-slate-50 text-slate-500 px-4 py-2 rounded-full hover:bg-[#d4af37]/10 hover:text-[#4a0404] transition-all flex items-center gap-2 border border-slate-100 shadow-sm"
+                      >
+                        {s.title || "Fuente oficial"} <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
 
-            <button onClick={shareWhatsApp} className="w-full bg-[#25d366] text-white py-6 rounded-[2.5rem] font-black flex items-center justify-center gap-4 shadow-xl active:scale-[0.96] transition-all text-xl tracking-tight border-b-4 border-[#128c7e]">
-              <Share2 className="w-6 h-6" /> COMPARTIR POR WHATSAPP
+            {/* Compartir WhatsApp */}
+            <button 
+              onClick={shareWhatsApp} 
+              className="w-full bg-[#25d366] text-white py-6 rounded-[2.5rem] font-black flex items-center justify-center gap-4 shadow-[0_15px_30px_-10px_rgba(37,211,102,0.4)] active:scale-[0.96] transition-all text-xl tracking-tight border-b-4 border-[#128c7e] group"
+            >
+              <Share2 className="w-6 h-6 group-hover:rotate-12 transition-transform" /> 
+              ENVIAR POR WHATSAPP
             </button>
           </div>
         )}
       </main>
 
-      <footer className="text-center pt-12 pb-16 opacity-20">
-        <p className="text-[9px] font-black uppercase tracking-[0.6em] text-[#4a0404]">Guía Cofrade Pro · 2025</p>
+      <footer className="text-center pt-12 pb-16 opacity-30">
+        <p className="text-[10px] font-black uppercase tracking-[0.6em] text-[#4a0404]">Guía Cofrade Pro · MMXV</p>
       </footer>
     </div>
   );
