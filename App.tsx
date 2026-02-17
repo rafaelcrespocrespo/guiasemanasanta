@@ -33,11 +33,11 @@ const DAYS: HolyDay[] = [
 
 const LOADING_MESSAGES = [
   "Abriendo el programa de mano oficial...",
-  "Consultando recorridos de 2025...",
-  "Buscando el mejor sitio para ver el paso...",
+  "Consultando recorridos reales de 2025...",
+  "Buscando el mejor sitio según tu preferencia...",
   "Siguiendo el rastro del incienso y el azahar...",
   "Afinando las marchas procesionales...",
-  "Esperando la venia en la Campana..."
+  "Esperando la venia en Campana..."
 ];
 
 const App: React.FC = () => {
@@ -54,7 +54,7 @@ const App: React.FC = () => {
     if (!vibe.trim()) {
       setError({ 
         title: "Dinos qué buscas", 
-        msg: "Describe el ambiente que deseas (ej: bullas, silencio, música de banda, calles estrechas...) para crear tu ruta." 
+        msg: "Por favor, describe qué ambiente te apetece para que el experto pueda planificar tu ruta." 
       });
       return;
     }
@@ -71,68 +71,59 @@ const App: React.FC = () => {
     }, 2800);
 
     try {
-      // Inicialización directa sin comprobación previa para evitar bloqueos del bundler
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
-      const prompt = `Actúa como un cronista experto de la Semana Santa andaluza. Crea un itinerario de gala para ${city} el ${day}.
+      const prompt = `Actúa como un experto cronista de la Semana Santa andaluza. Crea un itinerario profesional para la ciudad de ${city} el día ${day}.
       El usuario busca: "${vibe}".
       
-      REGLAS DE ORO:
-      1. Usa Google Search para obtener horarios y recorridos REALES de 2025.
-      2. Crea 4 momentos: Salida/Mañana, Tarde, Noche y Recogida/Madrugada.
-      3. Explica detalladamente por qué ese sitio es perfecto según su preferencia: "${vibe}".
-      4. Incluye un consejo experto final.
-      5. Responde estrictamente en JSON.`;
+      IMPORTANTE: Usa Google Search para obtener datos REALES de 2025.
+      Proporciona el itinerario en un bloque de código JSON con esta estructura exacta:
+      {
+        "city": "${city}",
+        "day": "${day}",
+        "plan_title": "Nombre sugerente del plan",
+        "itinerary": [
+          { "hour": "HH:mm", "brotherhood": "Nombre", "location": "Calle/Plaza", "vibe_reason": "Por qué aquí" }
+        ],
+        "extra_tips": "Consejo final"
+      }
+      Asegúrate de incluir exactamente 4 momentos clave.`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-3-pro-preview',
         contents: prompt,
         config: {
-          tools: [{ googleSearch: {} }],
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              city: { type: Type.STRING },
-              day: { type: Type.STRING },
-              plan_title: { type: Type.STRING },
-              itinerary: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    hour: { type: Type.STRING },
-                    brotherhood: { type: Type.STRING },
-                    location: { type: Type.STRING },
-                    vibe_reason: { type: Type.STRING }
-                  },
-                  required: ["hour", "brotherhood", "location", "vibe_reason"]
-                }
-              },
-              extra_tips: { type: Type.STRING }
-            },
-            required: ["city", "day", "plan_title", "itinerary", "extra_tips"]
-          }
+          tools: [{ googleSearch: {} }]
+          // No usamos responseMimeType aquí porque causa conflictos con Google Search
         }
       });
 
-      if (response.text) {
-        const data = JSON.parse(response.text) as ItineraryResponse;
+      const responseText = response.text || "";
+      
+      // Intentar extraer el JSON del texto (por si la IA añade explicaciones fuera del bloque)
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const data = JSON.parse(jsonMatch[0]) as ItineraryResponse;
         setResult(data);
-        
-        const grounding = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
-        const extractedSources = grounding
-          .filter((c: any) => c.web)
-          .map((c: any) => ({
-            uri: c.web.uri,
-            title: c.web.title || 'Programa Oficial'
-          }));
-        setSources(extractedSources);
+      } else {
+        throw new Error("La respuesta del experto no tuvo el formato esperado. Inténtalo de nuevo.");
       }
+      
+      // Extraer fuentes
+      const grounding = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+      const extractedSources = grounding
+        .filter((c: any) => c.web)
+        .map((c: any) => ({
+          uri: c.web.uri,
+          title: c.web.title || 'Referencia'
+        }));
+      setSources(extractedSources);
+
     } catch (err: any) {
+      console.error("Detalle del error:", err);
       setError({
-        title: "Error de Conexión",
-        msg: "No se pudo obtener el itinerario. Si el problema persiste, revisa que la API_KEY en Netlify sea correcta y limpia la caché del deploy."
+        title: "Fallo en la Estación de Penitencia",
+        msg: err.message || "Error desconocido al contactar con el experto."
       });
     } finally {
       clearInterval(interval);
@@ -143,15 +134,14 @@ const App: React.FC = () => {
 
   const shareWhatsApp = () => {
     if (!result) return;
-    const text = `*📿 Mi Ruta Cofrade: ${result.plan_title}*\n_${result.city} - ${result.day}_\n\n` + 
+    const text = `*📿 Mi Itinerario Cofrade: ${result.plan_title}*\n_${result.city} - ${result.day}_\n\n` + 
       result.itinerary.map(i => `📍 *${i.hour}*: ${i.brotherhood}\n   _${i.location}_`).join('\n\n') +
-      `\n\n_Generado por Guía Cofrade Pro_`;
+      `\n\n_Plan creado con Guía Cofrade Pro_`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   return (
-    <div className="min-h-screen bg-[#fdfaf6] pb-24 touch-pan-y selection:bg-[#4a0404]/10">
-      {/* Cabecera Monumental */}
+    <div className="min-h-screen bg-[#fdfaf6] pb-24 selection:bg-[#4a0404]/10">
       <header className="bg-[#4a0404] text-[#d4af37] pt-16 pb-64 px-6 rounded-b-[4rem] shadow-2xl relative border-b-8 border-[#d4af37]/20 overflow-hidden">
         <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/black-paper.png')]"></div>
         <div className="max-w-xl mx-auto text-center relative z-10">
@@ -166,7 +156,6 @@ const App: React.FC = () => {
       </header>
 
       <main className="max-w-xl mx-auto -mt-56 px-4 space-y-6 relative z-20">
-        {/* Panel de Selección */}
         <section className="bg-white rounded-[3rem] p-8 shadow-2xl border border-white/60 backdrop-blur-md">
           <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="space-y-2">
@@ -177,7 +166,7 @@ const App: React.FC = () => {
                 <select 
                   value={city} 
                   onChange={e => setCity(e.target.value as City)} 
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 font-bold text-slate-800 outline-none appearance-none text-sm shadow-sm transition-colors active:bg-slate-100"
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 font-bold text-slate-800 outline-none appearance-none text-sm shadow-sm"
                 >
                   {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
@@ -192,7 +181,7 @@ const App: React.FC = () => {
                 <select 
                   value={day} 
                   onChange={e => setDay(e.target.value as HolyDay)} 
-                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 font-bold text-slate-800 outline-none appearance-none text-sm shadow-sm transition-colors active:bg-slate-100"
+                  className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 px-4 font-bold text-slate-800 outline-none appearance-none text-sm shadow-sm"
                 >
                   {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
                 </select>
@@ -203,12 +192,12 @@ const App: React.FC = () => {
 
           <div className="space-y-2 mb-8">
             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 px-1">
-              <Sparkles className="w-3.5 h-3.5 text-[#d4af37]" /> ¿Qué ambiente prefieres?
+              <Sparkles className="w-3.5 h-3.5 text-[#d4af37]" /> ¿Qué buscas hoy?
             </label>
             <textarea 
               value={vibe} 
               onChange={e => setVibe(e.target.value)} 
-              placeholder="Ej: Ver una salida, mucha música, sitios de bulla, silencio absoluto, calles de barrio..." 
+              placeholder="Ej: Silencio, mucha música, calles estrechas, barrios populares..." 
               className="w-full bg-slate-50 border border-slate-100 rounded-[2rem] py-5 px-6 min-h-[120px] text-slate-700 resize-none outline-none focus:ring-4 focus:ring-[#d4af37]/10 transition-all text-base shadow-inner font-medium" 
             />
           </div>
@@ -216,14 +205,13 @@ const App: React.FC = () => {
           <button 
             onClick={generateItinerary} 
             disabled={loading} 
-            className="w-full bg-[#4a0404] disabled:bg-slate-300 text-[#d4af37] font-black py-7 rounded-[2.5rem] shadow-xl active:scale-[0.96] transition-all flex items-center justify-center gap-4 border-b-8 border-[#330303] active:border-b-0 touch-manipulation"
+            className="w-full bg-[#4a0404] disabled:bg-slate-300 text-[#d4af37] font-black py-7 rounded-[2.5rem] shadow-xl active:scale-[0.96] transition-all flex items-center justify-center gap-4 border-b-8 border-[#330303] active:border-b-0"
           >
             {loading ? <Loader2 className="w-7 h-7 animate-spin" /> : <Navigation className="w-6 h-6" />}
-            <span className="text-xl tracking-tight uppercase font-serif-cofrade font-bold">Planificar Itinerario</span>
+            <span className="text-xl tracking-tight uppercase font-serif-cofrade font-bold">Planificar Ruta</span>
           </button>
         </section>
 
-        {/* Carga Animada */}
         {loading && (
           <div className="bg-white/95 rounded-[3.5rem] p-12 flex flex-col items-center justify-center space-y-6 shadow-2xl border border-white fade-in text-center">
             <div className="relative">
@@ -234,7 +222,6 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Panel de Errores */}
         {error && (
           <div className="bg-white rounded-[2.5rem] p-8 shadow-2xl border-l-[12px] border-red-600 fade-in">
             <div className="flex items-start gap-4">
@@ -242,22 +229,20 @@ const App: React.FC = () => {
               <div className="space-y-2">
                 <h3 className="font-serif-cofrade text-2xl font-bold text-slate-900 leading-none">{error.title}</h3>
                 <p className="text-slate-600 text-sm leading-relaxed">{error.msg}</p>
-                <button onClick={() => setError(null)} className="text-[10px] font-black uppercase text-[#d4af37] border-b-2 border-[#d4af37]/20 mt-2">Cerrar aviso</button>
+                <button onClick={() => setError(null)} className="text-[10px] font-black uppercase text-[#d4af37] border-b-2 border-[#d4af37]/20 mt-2">Cerrar</button>
               </div>
             </div>
           </div>
         )}
 
-        {/* Itinerario Resultante */}
         {result && (
           <div className="space-y-8 fade-in pb-12">
             <div className="bg-white rounded-[4rem] p-10 shadow-2xl border border-white relative overflow-hidden">
               <div className="absolute top-0 left-0 w-full h-3 bg-gradient-to-r from-[#d4af37] via-[#f3e5ab] to-[#d4af37]"></div>
-              
               <div className="mb-12 text-center">
                 <h2 className="text-4xl font-serif-cofrade font-extrabold text-[#4a0404] mb-4 leading-tight uppercase tracking-tight">{result.plan_title}</h2>
-                <div className="inline-flex items-center gap-3 px-8 py-2 bg-[#fcf9f4] rounded-full border border-[#d4af37]/20">
-                  <span className="text-[10px] font-black text-[#d4af37] uppercase tracking-[0.3em]">{result.city} · {result.day}</span>
+                <div className="inline-flex items-center gap-3 px-8 py-2 bg-[#fcf9f4] rounded-full border border-[#d4af37]/20 text-[10px] font-black text-[#d4af37] uppercase tracking-[0.3em]">
+                  {result.city} · {result.day}
                 </div>
               </div>
 
@@ -267,15 +252,13 @@ const App: React.FC = () => {
                     <div className="absolute left-0 top-1 w-10 h-10 rounded-full bg-white border-2 border-[#d4af37] flex items-center justify-center z-10 shadow-lg">
                       <span className="text-[#4a0404] font-black text-xs">{i + 1}</span>
                     </div>
-                    
                     <div className="space-y-3">
                       <span className="text-white font-black text-[10px] bg-[#4a0404] px-5 py-2 rounded-full border border-[#d4af37]/40 uppercase tracking-tighter inline-flex items-center gap-2 shadow-md">
                         <Clock className="w-3.5 h-3.5" /> {item.hour}
                       </span>
                       <h3 className="text-3xl font-serif-cofrade font-bold text-slate-900 uppercase leading-none tracking-tight">{item.brotherhood}</h3>
                       <div className="flex items-start gap-2 text-[#d4af37] text-[13px] font-bold uppercase tracking-wider">
-                        <MapPin className="w-4 h-4 mt-0.5" /> 
-                        <span className="border-b border-[#d4af37]/10 pb-1">{item.location}</span>
+                        <MapPin className="w-4 h-4 mt-0.5" /> <span>{item.location}</span>
                       </div>
                       <div className="mt-4 bg-[#fcf9f4] p-6 rounded-[2.5rem] border-l-[8px] border-[#d4af37] shadow-inner">
                         <p className="italic text-slate-700 text-[17px] leading-relaxed font-serif-cofrade font-medium">"{item.vibe_reason}"</p>
@@ -303,7 +286,7 @@ const App: React.FC = () => {
               )}
             </div>
 
-            <button onClick={shareWhatsApp} className="w-full bg-[#25d366] text-white py-7 rounded-[3rem] font-black flex items-center justify-center gap-4 shadow-2xl active:scale-[0.96] transition-all text-xl tracking-tight border-b-8 border-[#128c7e] active:border-b-0 touch-manipulation">
+            <button onClick={shareWhatsApp} className="w-full bg-[#25d366] text-white py-7 rounded-[3rem] font-black flex items-center justify-center gap-4 shadow-2xl active:scale-[0.96] transition-all text-xl tracking-tight border-b-8 border-[#128c7e] active:border-b-0">
               <Share2 className="w-7 h-7" /> COMPARTIR POR WHATSAPP
             </button>
           </div>
