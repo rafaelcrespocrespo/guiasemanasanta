@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { 
   MapPin, 
@@ -9,11 +9,12 @@ import {
   Share2, 
   Sparkles, 
   AlertCircle,
-  ChevronRight,
   Music2,
   Users2,
-  Volume2,
-  Info
+  ChevronRight,
+  ExternalLink,
+  Calendar,
+  Link as LinkIcon
 } from 'lucide-react';
 import { City, HolyDay, ItineraryResponse } from './types';
 
@@ -31,10 +32,11 @@ const DAYS: HolyDay[] = [
 
 const LOADING_MESSAGES = [
   "Abriendo el programa de mano...",
-  "Buscando el mejor balcón en la calle Sierpes...",
-  "Siguiendo el rastro del incienso...",
-  "Calculando la llegada a Carrera Oficial...",
-  "Afinando las cornetas y tambores..."
+  "Consultando recorridos oficiales 2025...",
+  "Buscando el mejor sitio para ver la cofradía...",
+  "Siguiendo el rastro del incienso y el azahar...",
+  "Esperando a que pase el último tramo de nazarenos...",
+  "Afinando las marchas procesionales..."
 ];
 
 const App: React.FC = () => {
@@ -44,32 +46,12 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [loadingStep, setLoadingStep] = useState('');
   const [result, setResult] = useState<ItineraryResponse | null>(null);
-  const [error, setError] = useState<{title: string, msg: string, debug?: string} | null>(null);
-
-  // Intentar obtener la API Key de forma segura
-  const getApiKey = () => {
-    try {
-      // @ts-ignore
-      return process.env.API_KEY || '';
-    } catch (e) {
-      return '';
-    }
-  };
+  const [sources, setSources] = useState<any[]>([]);
+  const [error, setError] = useState<{title: string, msg: string} | null>(null);
 
   const generateItinerary = useCallback(async () => {
     if (!vibe.trim()) {
-      setError({ title: "Falta tu preferencia", msg: "¿Qué te apetece ver? Escribe algo como 'barrios', 'silencio' o 'muchas bandas'." });
-      return;
-    }
-
-    const apiKey = getApiKey();
-    
-    if (!apiKey || apiKey === "undefined" || apiKey === "") {
-      setError({ 
-        title: "Llave de San Pedro no encontrada", 
-        msg: "La aplicación no detecta tu API_KEY de Netlify.",
-        debug: "Asegúrate de: 1. Crear la variable API_KEY en Netlify. 2. Si subes la carpeta a mano, la clave puede no funcionar. Es recomendable conectar GitHub."
-      });
+      setError({ title: "Falta tu preferencia", msg: "Dime qué buscas hoy: ¿silencio?, ¿música?, ¿barrios?, ¿bulla?" });
       return;
     }
 
@@ -82,20 +64,22 @@ const App: React.FC = () => {
     
     setError(null);
     setResult(null);
+    setSources([]);
 
     try {
-      const ai = new GoogleGenAI({ apiKey });
+      // IMPORTANTE: Creamos la instancia justo antes de usarla para asegurar que lee la API_KEY inyectada
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
       
-      const prompt = `Actúa como el cronista oficial de la Semana Santa. 
+      const prompt = `Actúa como un experto cronista de la Semana Santa andaluza. 
       Genera un itinerario para la ciudad de ${city} el día ${day}.
-      Preferencia del usuario: "${vibe}".
+      El usuario busca este ambiente: "${vibe}".
       
-      REGLAS:
-      1. Usa Google Search para obtener datos REALES de 2025 (horarios y calles).
-      2. Crea un plan con 4 momentos (Mañana, Tarde, Noche, Madrugada/Recogida).
-      3. Sé extremadamente preciso con los nombres de las calles y plazas.
-      4. Explica por qué ese lugar es perfecto para lo que busca el usuario.
-      5. Responde exclusivamente en JSON.`;
+      REQUISITOS:
+      1. Usa Google Search para obtener horarios y recorridos REALES DE 2025.
+      2. Diseña un plan con 4 momentos clave: Mañana/Salida, Tarde, Noche y Recogida.
+      3. Sé muy específico con calles y plazas de ${city}.
+      4. Explica detalladamente por qué cada punto encaja con su preferencia ("${vibe}").
+      5. Responde con un JSON estructurado según el esquema.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -130,16 +114,29 @@ const App: React.FC = () => {
       });
 
       clearInterval(interval);
-      if (!response.text) throw new Error("No hay datos");
-      const data = JSON.parse(response.text) as ItineraryResponse;
-      setResult(data);
+      
+      if (response.text) {
+        const data = JSON.parse(response.text) as ItineraryResponse;
+        setResult(data);
+        
+        // Extraemos las fuentes de información (Grounding)
+        const grounding = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+        const webLinks = grounding.filter((c: any) => c.web).map((c: any) => c.web);
+        setSources(webLinks);
+      }
     } catch (err: any) {
       clearInterval(interval);
-      setError({ 
-        title: "Corte en la Cofradía", 
-        msg: "Hubo un error al conectar con los servicios de Google. Revisa tu conexión o la validez de tu API Key.",
-        debug: err.message
-      });
+      console.error(err);
+      
+      let errorTitle = "Corte en la Procesión";
+      let errorMsg = "No hemos podido conectar con los datos de 2025. Revisa que tu API_KEY en Netlify sea correcta y vuelve a intentarlo.";
+      
+      if (err.message?.includes('401') || err.message?.includes('API_KEY')) {
+        errorTitle = "Llave de San Pedro Errónea";
+        errorMsg = "La API_KEY no es válida o no ha sido detectada. Asegúrate de haber guardado la variable en Netlify y de haber hecho un nuevo 'deploy'.";
+      }
+
+      setError({ title: errorTitle, msg: errorMsg });
     } finally {
       setLoading(false);
       setLoadingStep('');
@@ -148,163 +145,137 @@ const App: React.FC = () => {
 
   const shareWhatsApp = () => {
     if (!result) return;
-    const text = `*📿 Mi Itinerario: ${result.plan_title}*\n_${result.city} - ${result.day}_\n\n` + 
+    const text = `*📿 Mi Itinerario Cofrade: ${result.plan_title}*\n_${result.city} - ${result.day}_\n\n` + 
       result.itinerary.map(i => `📍 *${i.hour}*: ${i.brotherhood}\n   _${i.location}_`).join('\n\n') +
-      `\n\n_Generado por Guía Cofrade Pro_`;
+      `\n\n_Vía Guía Cofrade Pro 2025_`;
     window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
   };
 
   return (
-    <div className="min-h-screen bg-[#fdfaf6] pb-12 overflow-x-hidden selection:bg-[#5c0b0b] selection:text-[#d4af37]">
-      {/* Header Estilo Talla Barroca */}
-      <header className="bg-[#4a0404] text-[#d4af37] pt-16 pb-32 px-6 rounded-b-[4.5rem] shadow-2xl relative border-b-4 border-[#d4af37]/20">
-        <div className="absolute inset-0 opacity-10 bg-[url('https://www.transparenttextures.com/patterns/pinstriped-suit.png')]"></div>
+    <div className="min-h-screen bg-[#fcf9f4] pb-24 overflow-x-hidden selection:bg-[#4a0404] selection:text-[#d4af37]">
+      {/* Header Estilo Tradicional */}
+      <header className="bg-[#4a0404] text-[#d4af37] pt-16 pb-44 px-6 rounded-b-[5rem] shadow-2xl relative border-b-8 border-[#d4af37]/10">
+        <div className="absolute inset-0 opacity-15 bg-[url('https://www.transparenttextures.com/patterns/pinstriped-suit.png')]"></div>
         <div className="max-w-xl mx-auto text-center relative z-10">
-          <h1 className="text-5xl font-serif-cofrade font-bold mb-3 tracking-tight drop-shadow-lg">Guía Cofrade Pro</h1>
-          <div className="flex items-center justify-center gap-4">
-            <div className="h-px w-12 bg-[#d4af37]/40"></div>
-            <p className="text-[#f3e5ab]/60 text-[10px] uppercase font-black tracking-[0.5em]">Andalucía 2025</p>
-            <div className="h-px w-12 bg-[#d4af37]/40"></div>
+          <h1 className="text-5xl font-serif-cofrade font-bold mb-4 tracking-tighter drop-shadow-2xl sm:text-6xl">Guía Cofrade Pro</h1>
+          <div className="flex items-center justify-center gap-5 opacity-70">
+            <div className="h-px w-10 bg-[#d4af37]"></div>
+            <p className="text-[#f3e5ab] text-[11px] uppercase font-black tracking-[0.5em]">Andalucía 2025</p>
+            <div className="h-px w-10 bg-[#d4af37]"></div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-xl mx-auto -mt-24 px-4 space-y-6 relative z-20">
-        {/* Panel de Control */}
-        <section className="bg-white/95 backdrop-blur-md rounded-[3rem] p-8 shadow-2xl border border-white/20">
+      <main className="max-w-xl mx-auto -mt-36 px-4 space-y-8 relative z-20">
+        {/* Formulario Principal */}
+        <section className="bg-white/95 backdrop-blur-md rounded-[3.5rem] p-10 shadow-[0_40px_80px_rgba(0,0,0,0.15)] border border-white/60">
           <div className="grid grid-cols-2 gap-5 mb-8">
             <div className="space-y-2">
-              <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 ml-1">
-                <MapPin className="w-3 h-3" /> Ciudad
+              <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 ml-1">
+                <MapPin className="w-3.5 h-3.5 text-[#d4af37]" /> Ciudad
               </label>
               <select 
                 value={city} 
                 onChange={e => setCity(e.target.value as City)} 
-                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-4 font-bold text-slate-800 outline-none focus:border-[#d4af37]/40 transition-all appearance-none shadow-sm cursor-pointer"
+                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-4 font-bold text-slate-800 outline-none focus:border-[#d4af37]/50 transition-all appearance-none"
               >
                 {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
             <div className="space-y-2">
-              <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 ml-1">
-                <Clock className="w-3 h-3" /> Jornada
+              <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 ml-1">
+                <Calendar className="w-3.5 h-3.5 text-[#d4af37]" /> Día
               </label>
               <select 
                 value={day} 
                 onChange={e => setDay(e.target.value as HolyDay)} 
-                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-4 font-bold text-slate-800 outline-none focus:border-[#d4af37]/40 transition-all appearance-none shadow-sm cursor-pointer"
+                className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl py-4 px-4 font-bold text-slate-800 outline-none focus:border-[#d4af37]/50 transition-all appearance-none"
               >
                 {DAYS.map(d => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>
           </div>
 
-          <div className="space-y-2 mb-8">
-            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 ml-1">
-              <Sparkles className="w-3 h-3" /> Preferencias del día
+          <div className="space-y-2 mb-10">
+            <label className="text-[11px] font-black text-slate-400 uppercase tracking-widest flex items-center gap-2 ml-1">
+              <Sparkles className="w-3.5 h-3.5 text-[#d4af37]" /> ¿Qué buscas hoy?
             </label>
-            <div className="relative group">
-              <textarea 
-                value={vibe} 
-                onChange={e => setVibe(e.target.value)}
-                placeholder="Ej: Ver cofradías de barrio, escuchar cornetas, evitar aglomeraciones..." 
-                className="w-full bg-slate-50 border-2 border-slate-100 rounded-3xl py-5 px-6 min-h-[130px] text-slate-700 resize-none outline-none focus:border-[#d4af37]/40 transition-all shadow-inner group-hover:border-slate-200"
-              />
-              <div className="absolute right-4 bottom-4 flex gap-3 opacity-20 group-focus-within:opacity-40 transition-opacity">
-                <Music2 className="w-5 h-5 text-[#4a0404]" />
-                <Users2 className="w-5 h-5 text-[#4a0404]" />
-              </div>
-            </div>
+            <textarea 
+              value={vibe} 
+              onChange={e => setVibe(e.target.value)}
+              placeholder="Ej: Silencio, cornetas y tambores, evitar bulla, ver palios..." 
+              className="w-full bg-slate-50 border-2 border-slate-100 rounded-[2.5rem] py-6 px-8 min-h-[140px] text-slate-700 resize-none outline-none focus:border-[#d4af37]/50 transition-all shadow-inner"
+            />
           </div>
 
           <button 
             onClick={generateItinerary}
             disabled={loading}
-            className="w-full bg-[#4a0404] disabled:bg-slate-300 text-[#d4af37] font-black py-6 rounded-[2rem] shadow-xl active:scale-[0.96] transition-all flex items-center justify-center gap-4 border-2 border-[#d4af37]/20"
+            className="w-full bg-[#4a0404] disabled:bg-slate-300 text-[#d4af37] font-black py-7 rounded-[2.5rem] shadow-2xl active:scale-[0.96] transition-all flex items-center justify-center gap-5 border-2 border-[#d4af37]/30 group"
           >
-            {loading ? <Loader2 className="w-7 h-7 animate-spin" /> : <Compass className="w-7 h-7" />}
-            <span className="text-xl tracking-tight uppercase">Trazar Itinerario</span>
+            {loading ? <Loader2 className="w-8 h-8 animate-spin" /> : <Compass className="w-8 h-8" />}
+            <span className="text-xl tracking-tighter uppercase">Trazar Mi Ruta 2025</span>
           </button>
         </section>
 
-        {/* Pantalla de Carga */}
+        {/* Carga */}
         {loading && (
-          <div className="bg-white/80 backdrop-blur-md rounded-[2.5rem] p-16 flex flex-col items-center justify-center space-y-8 shadow-xl border border-white fade-in">
-            <div className="relative">
-              <div className="w-20 h-20 border-[6px] border-[#d4af37]/10 border-t-[#4a0404] rounded-full animate-spin"></div>
-              <div className="absolute inset-0 flex items-center justify-center">
-                <Sparkles className="w-8 h-8 text-[#d4af37] animate-pulse" />
-              </div>
-            </div>
-            <div className="text-center space-y-2">
-              <p className="text-lg font-serif-cofrade font-bold text-[#4a0404] italic">{loadingStep}</p>
-              <p className="text-[10px] text-slate-400 uppercase tracking-[0.2em]">Consultando archivos 2025</p>
-            </div>
+          <div className="bg-white/95 rounded-[4rem] p-20 flex flex-col items-center justify-center space-y-8 shadow-2xl border border-white fade-in">
+            <div className="w-24 h-24 border-[8px] border-[#d4af37]/10 border-t-[#4a0404] rounded-full animate-spin"></div>
+            <p className="text-2xl font-serif-cofrade font-bold text-[#4a0404] italic text-center leading-tight">{loadingStep}</p>
           </div>
         )}
 
-        {/* Error y Soporte */}
+        {/* Error */}
         {error && (
-          <div className="bg-red-50 text-red-900 p-8 rounded-[2.5rem] border border-red-100 flex flex-col gap-4 shadow-xl fade-in">
-            <div className="flex items-center gap-3 font-black text-xs uppercase tracking-[0.2em] text-red-700">
-              <AlertCircle className="w-7 h-7" /> {error.title}
-            </div>
-            <p className="text-sm leading-relaxed font-medium opacity-90">{error.msg}</p>
-            {error.debug && (
-              <div className="mt-4 p-5 bg-white/60 rounded-2xl border border-red-200/50">
-                <div className="flex items-center gap-2 mb-2 text-[10px] font-black text-red-800 uppercase">
-                  <Info className="w-3.5 h-3.5" /> Ayuda Técnica
-                </div>
-                <p className="text-[11px] leading-relaxed text-red-800 italic">{error.debug}</p>
-              </div>
-            )}
+          <div className="bg-red-50 text-red-900 p-10 rounded-[4rem] border border-red-100 flex flex-col gap-4 shadow-xl fade-in text-center">
+            <AlertCircle className="w-10 h-10 text-red-700 mx-auto" />
+            <h3 className="font-black uppercase tracking-widest text-xs text-red-700">{error.title}</h3>
+            <p className="text-sm font-medium">{error.msg}</p>
           </div>
         )}
 
-        {/* El Resultado: El "Programa de Mano" */}
+        {/* Resultado: El Itinerario */}
         {result && (
-          <div className="space-y-8 fade-in pb-16">
-            <div className="bg-white rounded-[4rem] p-10 shadow-2xl border border-slate-100 overflow-hidden relative">
-              <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-[#d4af37] via-[#f3e5ab] to-[#d4af37]"></div>
+          <div className="space-y-10 fade-in pb-20">
+            <div className="bg-white rounded-[4.5rem] p-12 shadow-[0_50px_100px_rgba(0,0,0,0.18)] border border-slate-100 relative overflow-hidden">
+              <div className="absolute top-0 left-0 w-full h-3 bg-gradient-to-r from-[#d4af37] via-[#f3e5ab] to-[#d4af37]"></div>
               
               <div className="mb-16 text-center">
-                <h2 className="text-4xl font-serif-cofrade font-bold text-[#4a0404] mb-3 leading-tight">{result.plan_title}</h2>
-                <div className="inline-flex items-center gap-3 px-6 py-2 bg-slate-50 rounded-full border border-slate-100">
-                  <span className="text-[11px] font-black text-[#d4af37] uppercase tracking-widest">{city} · {day}</span>
+                <h2 className="text-4xl font-serif-cofrade font-bold text-[#4a0404] mb-4 leading-tight">{result.plan_title}</h2>
+                <div className="inline-flex items-center gap-4 px-8 py-2 bg-[#fdfaf6] rounded-full border border-[#d4af37]/30 shadow-sm">
+                  <span className="text-[12px] font-black text-[#d4af37] uppercase tracking-[0.3em]">{city} · {day}</span>
                 </div>
               </div>
 
-              <div className="space-y-16 relative">
-                {/* Línea del tiempo ornamental */}
-                <div className="absolute left-[15px] top-4 bottom-4 w-px bg-gradient-to-b from-transparent via-[#d4af37]/30 to-transparent"></div>
+              <div className="space-y-20 relative">
+                {/* Eje de la línea de tiempo */}
+                <div className="absolute left-[23px] top-8 bottom-8 w-px bg-gradient-to-b from-transparent via-[#d4af37]/40 to-transparent"></div>
                 
                 {result.itinerary.map((item, i) => (
-                  <div key={i} className="relative pl-14 group">
-                    <div className="absolute left-0 top-1 w-8 h-8 rounded-full bg-white border-2 border-[#d4af37] flex items-center justify-center z-10 shadow-md group-hover:scale-110 transition-transform">
-                      <span className="text-[#4a0404] font-black text-[10px]">{i + 1}</span>
+                  <div key={i} className="relative pl-20 group">
+                    <div className="absolute left-0 top-1 w-12 h-12 rounded-full bg-white border-2 border-[#d4af37] flex items-center justify-center z-10 shadow-lg group-hover:scale-110 transition-transform">
+                      <span className="text-[#4a0404] font-black text-sm">{i + 1}</span>
                     </div>
                     
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-3">
-                        <span className="text-white font-black text-[11px] bg-[#4a0404] px-4 py-1.5 rounded-full border border-[#d4af37]/30 uppercase tracking-tighter shadow-sm">
+                    <div className="space-y-5">
+                      <div className="flex items-center gap-4">
+                        <span className="text-white font-black text-[12px] bg-[#4a0404] px-6 py-2 rounded-full border border-[#d4af37]/40 uppercase tracking-tighter">
                           {item.hour}
                         </span>
                       </div>
                       
-                      <h3 className="text-2xl font-serif-cofrade font-bold text-slate-900 uppercase leading-none tracking-tight pt-1">
+                      <h3 className="text-3xl font-serif-cofrade font-bold text-slate-900 uppercase leading-none tracking-tight">
                         {item.brotherhood}
                       </h3>
                       
-                      <div className="flex items-start gap-2 text-[#d4af37] text-[11px] font-black uppercase tracking-widest">
-                        <MapPin className="w-4 h-4 flex-shrink-0 mt-[-1px]" /> 
-                        <span className="leading-relaxed border-b border-[#d4af37]/20 pb-0.5">{item.location}</span>
+                      <div className="flex items-start gap-3 text-[#d4af37] text-[13px] font-black uppercase tracking-widest">
+                        <MapPin className="w-5 h-5 flex-shrink-0" /> 
+                        <span className="border-b-2 border-[#d4af37]/20 pb-1">{item.location}</span>
                       </div>
                       
-                      <div className="mt-5 bg-[#fdfaf6] p-6 rounded-[2rem] border-l-4 border-[#d4af37] relative overflow-hidden shadow-sm group-hover:shadow-md transition-shadow">
-                        <div className="absolute top-0 right-0 p-2 opacity-5">
-                          <Music2 className="w-12 h-12" />
-                        </div>
-                        <p className="italic text-slate-600 text-[15px] leading-relaxed relative z-10">
+                      <div className="mt-6 bg-[#fcf9f4] p-8 rounded-[3rem] border-l-8 border-[#d4af37] shadow-inner">
+                        <p className="italic text-slate-600 text-[17px] leading-relaxed font-serif-cofrade">
                           "{item.vibe_reason}"
                         </p>
                       </div>
@@ -314,31 +285,48 @@ const App: React.FC = () => {
               </div>
 
               {result.extra_tips && (
-                <div className="mt-20 p-8 bg-[#4a0404]/5 rounded-[2.5rem] border border-[#d4af37]/10 relative">
-                   <div className="absolute -top-4 left-10 bg-white px-4 py-1 rounded-full border border-slate-100 flex items-center gap-2">
-                     <Sparkles className="w-3 h-3 text-[#d4af37]" />
-                     <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">Nota del Experto</span>
-                   </div>
-                   <p className="text-sm text-slate-700 italic leading-relaxed text-center font-medium">
+                <div className="mt-20 p-10 bg-[#4a0404]/5 rounded-[3.5rem] border border-[#d4af37]/20 text-center">
+                   <p className="text-lg text-slate-700 italic leading-relaxed font-serif-cofrade px-6">
                      {result.extra_tips}
                    </p>
+                </div>
+              )}
+
+              {/* Fuentes de Grounding (Obligatorio) */}
+              {sources.length > 0 && (
+                <div className="mt-16 pt-10 border-t border-slate-100 text-center">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-6 flex items-center justify-center gap-2">
+                    <LinkIcon className="w-3 h-3" /> Datos contrastados con fuentes oficiales
+                  </p>
+                  <div className="flex flex-wrap justify-center gap-3">
+                    {sources.map((s, idx) => (
+                      <a 
+                        key={idx} 
+                        href={s.uri} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="text-[11px] bg-slate-50 text-slate-500 px-5 py-2 rounded-full hover:bg-[#d4af37]/10 hover:text-[#4a0404] transition-all flex items-center gap-2 border border-slate-200"
+                      >
+                        {s.title || "Info oficial"} <ExternalLink className="w-3 h-3" />
+                      </a>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
 
             <button 
               onClick={shareWhatsApp}
-              className="w-full bg-[#25d366] text-white py-6 rounded-[2rem] font-black flex items-center justify-center gap-3 shadow-2xl active:scale-[0.96] transition-all text-xl tracking-tight border-b-4 border-[#128c7e]"
+              className="w-full bg-[#25d366] text-white py-8 rounded-[3rem] font-black flex items-center justify-center gap-5 shadow-2xl active:scale-[0.96] transition-all text-2xl tracking-tight border-b-8 border-[#128c7e]"
             >
-              <Share2 className="w-7 h-7" /> COMPARTIR POR WHATSAPP
+              <Share2 className="w-8 h-8" /> COMPARTIR PLAN COFRADE
             </button>
           </div>
         )}
       </main>
 
-      <footer className="text-center pt-10 pb-16 opacity-40">
-        <p className="text-[10px] font-black uppercase tracking-[0.5em] text-[#4a0404]">Guía Cofrade Pro · IA Cofrade 2025</p>
-        <p className="text-[8px] mt-2 italic text-slate-400">Diseñado para la pasión de Andalucía</p>
+      <footer className="text-center pt-20 pb-24 opacity-40">
+        <p className="text-[12px] font-black uppercase tracking-[0.8em] text-[#4a0404]">Guía Cofrade Pro 2025</p>
       </footer>
     </div>
   );
